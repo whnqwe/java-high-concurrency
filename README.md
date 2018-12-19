@@ -134,6 +134,8 @@ public enum State {
 
 #### 线程状态的演示
 
+##### 代码演示
+
 ```java
 public class ThreadStatus {
 
@@ -187,5 +189,69 @@ public class ThreadStatus {
 
 ```
 
+##### 查看代码状态
 
+通过相应命令显示线程状态 
+
+> jps
+>
+> > 打开终端或者命令提示符，键入“jps”，（JDK1.5 提供的一个显示当前所有 java
+> > 进程 pid 的命令），可以获得相应进程的 pid
+>
+> jstack
+>
+> > 根据上一步骤获得的 pid，继续输入 jstack pid（jstack 是 java 虚拟机自带的
+> > 一种堆栈跟踪工具。jstack 用于打印出给定的 java 进程 ID 或 core file 或远程
+> > 调试服务的 Java 堆栈信息）
+
+
+
+#### 线程的停止
+
+> 线程的启动过程大家都非常熟悉，但是如何终止一个线程，我相信绝大部分人在面试的时候被问到这个问题时，也会不知所措，不知道怎么回答。记住，线程的终止，并不是简单的调用 stop 命令去。虽然 api 仍然可以调用，但是和其他的线程控制方法如 suspend、resume 一样都是过期了的不建议使用，就拿 stop 来说，stop 方法在结束一个线程时并不会保证线程的资源正常释放，因此会导致程序可能出现一些不确定的状态。要优雅的去中断一个线程，在线程中提供了一个 interrupt 方法
+
+
+
+##### interrupt  
+
+###### interrupt的使用
+
+>当其他线程通过调用当前线程的 interrupt 方法，表示向当前线程打个招呼，告诉他可以中断线程的执行了，至于什么时候中断，取决于当前线程自己。
+
+
+
+> 线程通过 isInterrupted()来判断是否被中断。
+
+
+
+  ```java
+public class InterruptDemo {
+    public  static  int count = 0;
+    public static void main(String[] args) throws InterruptedException {
+        Thread thread = new Thread(()->{
+            while (!Thread.currentThread().isInterrupted()){
+                count ++;
+            }
+            System.out.println(count);
+        });
+        thread.start();
+        TimeUnit.SECONDS.sleep(2);
+        thread.interrupt();
+    }
+}
+  ```
+
+> 这种通过标识位或者中断操作的方式能够使线程在终止时有机会去清理资源，而不是武断地将线程停止，因此这种终止线程的做法显得更加安全和优雅
+
+ ###### 中断标识的线程复位
+
+- Thread.interrupted
+
+
+
+- 抛出 InterruptedException 异常
+
+
+
+  ##### volatile控制线程的终止
 
