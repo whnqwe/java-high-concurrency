@@ -92,7 +92,7 @@ public class CallableDemo implements Callable<Boolean> {
 
 ## 并发编程基础
 
-### 线程
+### 线程基础
 
 
 
@@ -216,6 +216,8 @@ public class ThreadStatus {
 
 ###### interrupt的使用
 
+###### isInterrupted的使用
+
 >当其他线程通过调用当前线程的 interrupt 方法，表示向当前线程打个招呼，告诉他可以中断线程的执行了，至于什么时候中断，取决于当前线程自己。
 
 
@@ -247,6 +249,29 @@ public class InterruptDemo {
 
 - Thread.interrupted
 
+```java
+public class InterruptDemo {
+
+    public  static  int count = 0;
+
+    public static void main(String[] args) throws InterruptedException {
+        Thread thread = new Thread(()->{
+            while (!Thread.currentThread().isInterrupted()){
+                count ++;
+            }
+            System.out.println(count);
+            System.out.println(Thread.currentThread().isInterrupted());//true
+            Thread.interrupted();
+            System.out.println(Thread.currentThread().isInterrupted()); //false
+        });
+        thread.start();
+        TimeUnit.SECONDS.sleep(2);
+        thread.interrupt();
+    }
+
+}
+```
+
 
 
 - 抛出 InterruptedException 异常
@@ -254,4 +279,99 @@ public class InterruptDemo {
 
 
   ##### volatile控制线程的终止
+
+```java
+public class InterruptDemo {
+    public  static  int count = 0;
+    public static  volatile boolean stop = false;
+    public static void main(String[] args) throws InterruptedException {
+        Thread thread = new Thread(()->{
+            while (!stop){
+                count ++;
+            }
+            System.out.println(count);
+        });
+        thread.start();
+        TimeUnit.SECONDS.sleep(2);
+        stop = true;
+    }
+}
+```
+
+### 线程的安全性问题
+
+> JDK层面的操作，是为了解决硬件层面的问题。
+>
+> JMM 屏蔽了操作系统，硬件等方面的差异，将多线程问题归结为java层面的可见性，原子性，有序性问题。
+
+#### CPU的高速缓冲
+
+
+
+#### 可见性
+
+> 内存屏障
+
+##### 可见性演示
+
+```java
+public class InterruptDemo {
+    public  static  int count = 0;
+    public static  boolean stop = false; 
+    //public static volatile   boolean stop = false;  //volatile保证可见性
+    public static void main(String[] args) throws InterruptedException {
+        Thread thread = new Thread(()->{
+            while (!stop){
+                count ++;
+            }
+            System.out.println(count);
+        });
+        thread.start();
+        TimeUnit.SECONDS.sleep(2);
+        stop = true;
+    }
+}
+```
+
+
+
+#### 有序性
+
+
+
+
+
+
+
+
+
+#### 原子性
+
+##### 原子性演示
+
+```java
+public class AtomicDemo {
+
+    private static  int count  = 0;
+
+    public   static void incr(){
+        try {
+            Thread.sleep(1000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+       count ++;
+    }
+    public static void main(String[] args) throws InterruptedException {
+       for(int i=0;i<1000;i++){
+           new Thread(AtomicDemo::incr).start();
+       }
+       Thread.sleep(2000);
+       System.out.println(count);
+    }
+}
+
+```
+
+
 
