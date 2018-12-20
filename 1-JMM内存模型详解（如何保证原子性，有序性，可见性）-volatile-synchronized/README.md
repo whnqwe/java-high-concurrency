@@ -211,6 +211,16 @@ public class VolatileDemo {
 
 > 在JMM中把内存屏障指令分为4类，通过在不同的语义下使用不同的内存屏障来禁止特定类型的处理器重排序，从而来保证内存的可见性
 
+
+
+> 对每个volatile 写操作的前面插入  storestorebarriers
+>
+> 对每个volatile 写操作的后面插入 storeloadbarriers
+>
+> 对每个volatile 读操作的前面插入  laodlaodbarriers
+>
+> 对每个volatile 读操作的后面插入  loadstorebarriers
+
 ##### LoadLoad Barriers
 
 > load1 ;     LoadLoad;      load2 
