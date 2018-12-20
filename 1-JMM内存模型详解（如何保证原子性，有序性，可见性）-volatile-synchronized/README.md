@@ -52,7 +52,7 @@
 
 > 在Java中提供了一系列和并发处理相关的关键字，比如volatile、Synchronized、final、juc等，这些就是Java内存模型封装了底层的实现后提供给开发人员使用的关键字
 
-> 原子性：Synchronized 
+> 原子性：Synchronized ，CAS, AQS
 >
 > > monitorenter
 > >
@@ -254,4 +254,44 @@ public class VolatileDemo {
 
 
 ## volatile为什么不能保证原子性
+
+> 无法保证复合操作的原子性
+
+```java
+public class Demo {
+  volatile int i;
+  public void incr(){
+    i++;
+ }
+  public static void main(String[] args) {
+    new Demo().incr();
+ }
+}
+```
+
+> 查看字节码,对一个原子递增的操作，会分为三个步骤：
+>
+> 1. getfield 
+>
+> >  读取volatile变量的值；
+>
+> 2. iadd
+>
+> > 增加变量的值；
+>
+> 3. putfield 
+>
+>    > 把值写回让其他线程可见
+
+
+
+  通过内存屏障可以保证store与load的顺序
+
+> loadA  loadB  storeA  storeB  可以保证  store能都在load指令前面或者后面执行。但是并不能保证loadA  ，storeA的连续执行
+>
+> 已i++ 为例，只能在一个线程store完毕之后才能对其他线程可见，否则其他线程得到的可能是旧的值。
+>
+>
+
+# Synchronized 
 
