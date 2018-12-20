@@ -304,9 +304,72 @@ public class InterruptDemo {
 >
 > JMM 屏蔽了操作系统，硬件等方面的差异，将多线程问题归结为java层面的可见性，原子性，有序性问题。
 
+#### 可见性
+
+> 内存屏障
+
+##### 可见性演示
+
+```java
+public class InterruptDemo {
+    public  static  int count = 0;
+    public static  boolean stop = false; 
+    //public static volatile   boolean stop = false;  //volatile保证可见性
+    public static void main(String[] args) throws InterruptedException {
+        Thread thread = new Thread(()->{
+            while (!stop){
+                count ++;
+            }
+            System.out.println(count);
+        });
+        thread.start();
+        TimeUnit.SECONDS.sleep(2);
+        stop = true;
+    }
+}
+```
 
 
-#### 硬件层面-CPU的高速缓冲认识
+
+#### 有序性
+
+
+
+#### 原子性
+
+##### 原子性演示
+
+```java
+public class AtomicDemo {
+
+    private static  int count  = 0;
+
+    public   static void incr(){
+        try {
+            Thread.sleep(1000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+       count ++;
+    }
+    public static void main(String[] args) throws InterruptedException {
+       for(int i=0;i<1000;i++){
+           new Thread(AtomicDemo::incr).start();
+       }
+       Thread.sleep(2000);
+       System.out.println(count);
+    }
+}
+
+```
+
+
+
+### 硬件层面 
+
+
+
+#### CPU的高速缓冲认识
 
 > 绝大部分的运算任务不能只依靠处理器“计算”就能完成，处理器还需要与内存交互，比如读取运算数据、存储运算结果。而由于计算机的存储设备与处理器的运算速度差距非常大，所以现代计算机系统都会增加一层读写速度尽可能接近处理器运算速度的高速缓存来作为内存和处理器之间的缓冲：将运算需要使用的数据复制到缓存中，让运算能快速进行，当运算结束后再从缓存同步到内存之中。
 
@@ -321,7 +384,7 @@ public class InterruptDemo {
 
 
 
-#### 硬件层面-CPU的高速缓冲产生的问题
+#### CPU的高速缓冲产生的问题
 
 ##### 缓冲一致性问题
 
@@ -369,76 +432,49 @@ public class InterruptDemo {
 > 先后顺序与输入代码中的顺序一致，这个是处理器的优化执行；还有一个就是
 > 编程语言的编译器也会有类似的优化，比如做指令重排来提升性能。
 
-#### 应用层面
 
 
+### 应用层面
 
+#### JMM内存模型概要
 
+> 内存模型定义了共享内存系统中多线程程序读写操作行为的规范，来屏蔽各种硬件和操作系统的内存访问差异，来实现 Java 程序在各个平台下都能达到一致的内存访问效果。
 
-#### 可见性
+##### 主要手段
 
-> 内存屏障
+- 限制处理器优化
+- 使用内存屏障
 
-##### 可见性演示
+#### JMM内存模型图例
 
-```java
-public class InterruptDemo {
-    public  static  int count = 0;
-    public static  boolean stop = false; 
-    //public static volatile   boolean stop = false;  //volatile保证可见性
-    public static void main(String[] args) throws InterruptedException {
-        Thread thread = new Thread(()->{
-            while (!stop){
-                count ++;
-            }
-            System.out.println(count);
-        });
-        thread.start();
-        TimeUnit.SECONDS.sleep(2);
-        stop = true;
-    }
-}
-```
+> Java 内存模型定义了线程和内存的交互方式
 
+![](image/applayer.png)
 
+##### 图例概念解读
 
-#### 有序性
+###### 内存分类
 
+- 主内存
 
+> 主内存是所有线程共享的
 
+- 工作内存
 
+> 工作内存是每个线程独有的
 
+###### 共享变量
 
+> 存放在堆内存的变量
 
+- 实例对象
+- 静态字段
+- 数组对象
 
+###### 变量操作限制
 
-#### 原子性
+- 线程对变量的所有操作（读取、赋值）都必须在工作内存中进行，不能直接读写主内存中的变量
 
-##### 原子性演示
+###### 线程间变量隔离限制
 
-```java
-public class AtomicDemo {
-
-    private static  int count  = 0;
-
-    public   static void incr(){
-        try {
-            Thread.sleep(1000);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-       count ++;
-    }
-    public static void main(String[] args) throws InterruptedException {
-       for(int i=0;i<1000;i++){
-           new Thread(AtomicDemo::incr).start();
-       }
-       Thread.sleep(2000);
-       System.out.println(count);
-    }
-}
-
-```
-
-
-
+- 并且不同的线程之间无法访问对方工作内存中的变量，线程间的变量值的传递都需要通过主内存来完成
