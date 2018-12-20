@@ -94,12 +94,108 @@
 
 > volatile变量修饰的共享变量，在进行写操作的时候会多出一个lock前缀的汇编指令，这个指令在前面我们讲解CPU高速缓存的时候提到过，会触发总线锁或者缓存锁，通过缓存一致性协议来解决可见性问题对于声明了volatile的变量进行写操作，JVM就会向处理器发送一条Lock前缀的指令，把这个变量所在的缓存行的数据写回到系统内存，再根据我们前面提到过的MESI的缓存一致性协议，来保证多CPU下的各个高速缓存中的数据的一致性。
 
-## 防止指令重排序之内存屏障
+## 防止指令重排序
 
-#### 解决问题
+#### 指令重排序代码演示
+
+> 1. x=1  y=1
+> 2. x=0  y=1
+> 3. x=1 y=0
+> 4. x=0  y=0
+
+```java
+public class VolatileDemo {
+
+    private static int x=0;
+    private static int y=0;
+    private static int a=0;
+    private static int b=0;
+
+    public static void main(String[] args) throws InterruptedException {
+      Thread t1 = new Thread(()->{
+           a=1;
+           x=b;
+        });
+        Thread t2 =  new Thread(()->{
+            b=1;
+            y=a;
+        });
+        t1.start();
+        t2.start();
+        t1.join(); //等待线程执行结果
+        t2.join();//等待线程执行结果
+        System.out.println("x="+y+"  "+"y="+y);
+    }
+
+}
+
+```
+
+#### 存在的问题
 
 - 编译器的指令重排序
 - 处理器的指令重排序
 
+#### 防止CPU的指令重排序--内存屏障
 
+>  现在的CPU架构都提供了内存屏障功能，在x86的cpu中，实现了相应的内存屏障
+>
+> - 写屏障(store barrier)
+>
+> - 读屏障(load barrier)
+>
+> - 全屏障(Full Barrier)
+>
+>   主要的作用是
+>
+>   - 防止指令之间的重排序
+>   - 保证数据的可见性
+
+##### store barrier
+
+> store barrier称为写屏障，相当于storestore barrier,
+>
+> > 强制所有在storestore内存屏障之前的所有执行，都要在该内存屏障之前执行，并发送缓存失效的信号。
+> >
+> > 所有在storestore barrier指令之后的store指令，都必须在storestore barrier屏障之前的指令执行完后再被执行。也就是禁止了写屏障前后的指令进行重排序。
+> >
+> > store barrier之前发生的内存更新都是可见的（这里的可见指的是修改值可见以及操作结果可见）。
+
+
+
+![](image/storestore.png)
+
+##### load barrier
+
+> load barrier称为读屏障，相当于loadload barrier。
+>
+> > 强制所有在load barrier读屏障之后的load指令，都在loadbarrier屏障之后执行。
+> >
+> > 也就是禁止对load barrier读屏障前后的load指令进行重排序。
+> >
+> > 配合store barrier，使得所有store barrier之前发生的内存更新，对load barrier之后的load操作是可见的。
+
+
+
+![](image/loadload.png)
+
+##### Full Barrier
+
+> full barrier成为全屏障，相当于storeload
+>
+> > 是一个全能型的屏障，因为它同时具备前面两种屏障的效果。强制了所有在storeload barrier之前的store/load指令，都在该屏障之前被执行，
+> >
+> > 所有在该屏障之后的的store/load指令，都在该屏障之后被执行。禁止对storeload屏障前后的指令进行重排序。
+
+![](image/storeload.png)
+
+
+
+##### 总结
+
+> 内存屏障只是解决顺序一致性问题，不解决缓存一致性问题，缓存一致性是由cpu的缓存锁以及MESI协议来完成的。而缓存一致性协议只关心缓存一致性，不关心顺序一致性。
+
+
+
+#### 编译器层面防止指令重排序
 
