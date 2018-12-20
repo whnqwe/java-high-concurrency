@@ -478,3 +478,8 @@ public class AtomicDemo {
 ###### 线程间变量隔离限制
 
 - 并且不同的线程之间无法访问对方工作内存中的变量，线程间的变量值的传递都需要通过主内存来完成
+
+###### 开放式的LOCK
+
+- monitorenter
+- volatile
