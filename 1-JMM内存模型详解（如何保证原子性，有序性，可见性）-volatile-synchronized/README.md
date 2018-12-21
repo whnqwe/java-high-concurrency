@@ -295,3 +295,102 @@ public class Demo {
 
 # Synchronized 
 
+> 解决原子性，可见性，有序性
+>
+> 在多线程并发编程中synchronized一直是元老级角色，很多人都会称呼它为重量级锁。Java SE 1.6中为了减少获得锁和释放锁带来的性能消耗而引入的偏向锁和轻量级锁，以及锁的存储结构和升级过程。
+
+## synchronized代码演示
+
+```java
+public class Demo {
+    private    static  int count  = 0;
+
+    public  static void incr(){
+        synchronized (Demo.class){
+            try {
+                Thread.sleep(1);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            count ++;
+        }
+
+    }
+    public static void main(String[] args) throws InterruptedException {
+        for(int i=0;i<1000;i++){
+            new Thread(Demo::incr).start();
+        }
+        Thread.sleep(4000);
+        System.out.println(count);
+    }
+}
+```
+
+## synchronized的三种应用方式
+
+####  静态方法
+
+> 作用于当前类对象加锁，进入同步代码前要获得当前类对象的锁
+
+> 全局锁
+
+```java
+public class Demo {
+    private    static  int count  = 0;
+
+    public  static void incr(){
+        synchronized (Demo.class){
+            try {
+                Thread.sleep(1);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            count ++;
+        }
+    }
+}
+```
+
+```java
+public class Demo {
+    private    static  int count  = 0;
+
+    public  synchronized static void incr(){
+            try {
+                Thread.sleep(1);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            count ++;
+    }
+}
+```
+
+
+
+#### 修饰代码块
+
+
+
+
+
+#### 修饰实例方法
+
+public class Demo {
+​    private    static  int count  = 0;
+
+```java
+public  static void incr(){
+    synchronized (this){
+        try {
+            Thread.sleep(1);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        count ++;
+    }
+  }
+}
+```
+
+
