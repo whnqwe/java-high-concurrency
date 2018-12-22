@@ -592,20 +592,6 @@ enum { locked_value             = 0,
   };
 ```
 
-
-
-
-
-##### synchronized如何实现锁(锁升级和获取过程)
-
-
-
-
-
-
-
-
-
 ##### 为什么任何一个对象都可以锁
 
 -  oop.hpp下的oopDesc类是JVM对象的顶级基类，所以每个object对象都包含markOop
@@ -637,17 +623,17 @@ class oopDesc {
 
 ```c++
   ObjectMonitor() {
-    _header       = NULL;
+    _header       = NULL; //markwork对象头
     _count        = 0;
-    _waiters      = 0,
-    _recursions   = 0;
+    _waiters      = 0, //等待线程数
+    _recursions   = 0; //重入次数
     _object       = NULL;
-    _owner        = NULL;
-    _WaitSet      = NULL;
+    _owner        = NULL; //指向获得ObectWaiter对象的线程
+    _WaitSet      = NULL; //处于wait状态的线程，会被加入watieset
     _WaitSetLock  = 0 ;
     _Responsible  = NULL ;
     _succ         = NULL ;
-    _cxq          = NULL ;
+    _cxq          = NULL ;//JVM为每一个尝试进去synchronized的线程创建一个ObjectWait并加入到_cxq中
     FreeNext      = NULL ;
     _EntryList    = NULL ;
     _SpinFreq     = 0 ;
@@ -658,6 +644,19 @@ class oopDesc {
 ```
 
 
+
+##### synchronized如何实现锁(锁升级和获取过程)
+
+> 了解了对象头以及monitor以后，接下来去分析synchronized的锁的实现，就会非常简单了。前面讲过
+> synchronized的锁是进行过优化的，引入了偏向锁、轻量级锁；锁的级别从低到高逐步升级
+>
+> - 无锁
+>
+> - 偏向锁
+>
+> - 轻量级锁
+>
+> - 重量级锁
 
 
 
