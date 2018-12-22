@@ -712,41 +712,13 @@ class oopDesc {
 
    
 
-```java
-public static String test03(String s1, String s2, String s3) {
-    String s = s1 + s2 + s3;
-    return s;
-}
-```
-
-> 由于`String`是一个不可变类，对字符串的连接操作总是通过生成的新的`String`对象来进行的。因此Javac编译器会对`String`连接做自动优化。在JDK 1.5之前会使用`StringBuffer`对象的连续`appen（）`操作，在JDK 1.5及以后的版本中，会转化为`StringBuidler`对象的连续`append（）`操作。
-
-```java
-public static java.lang.String test03(java.lang.String, java.lang.String, java.lang.String);
-    descriptor: (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
-    flags: ACC_PUBLIC, ACC_STATIC
-    Code:
-      stack=2, locals=4, args_size=3
-         0: new           #2                  // class java/lang/StringBuilder
-         3: dup
-         4: invokespecial #3                  // Method java/lang/StringBuilder."<init>":()V
-         7: aload_0
-         8: invokevirtual #4                  // Method java/lang/StringBuilder.append:(Ljava/lang/String;)Ljava/lang/StringBuilder;
-        11: aload_1
-        12: invokevirtual #4                  // Method java/lang/StringBuilder.append:(Ljava/lang/String;)Ljava/lang/StringBuilder;
-        15: aload_2
-        16: invokevirtual #4                  // Method java/lang/StringBuilder.append:(Ljava/lang/String;)Ljava/lang/StringBuilder;
-        19: invokevirtual #5                  // Method java/lang/StringBuilder.toString:()Ljava/lang/String;
-        22: astore_3
-        23: aload_3
-        24: areturn
-```
-
-> `StringBuidler`是安全同步的。但是在上述代码中，JVM判断该段代码并不会逃逸，则将该代码带默认为线程独有的资源，则并不需要同步，所以执行了锁消除操作。
-
 
 
 ###### 锁粗话
+
+>  原则上，我们都知道在加同步锁时，尽可能的将同步块的作用范围限制到尽量小的范围（只在共享数据的实际作用域中才进行同步，这样是为了使得需要同步的操作数量尽可能变小。在存在锁同步竞争中，也可以使得等待锁的线程尽早的拿到锁）。
+
+>  大部分上述情况是完美正确的，但是如果存在连串的一系列操作都对同一个对象反复加锁和解锁，甚至加锁操作时出现在循环体中的，那即使没有线程竞争，频繁地进行互斥同步操作也会导致不必要地性能操作。
 
 
 
@@ -784,9 +756,41 @@ public static java.lang.String test03(java.lang.String, java.lang.String, java.l
 
 ###### 轻量级锁
 
+>  在JDK 1.6之后引入的轻量级锁，需要注意的是轻量级锁并不是替代重量级锁的，而是对在大多数情况下同步块并不会有竞争出现提出的一种优化。它可以减少重量级锁对线程的阻塞带来地线程开销。从而提高并发性能。
+>
+> 当关闭偏向锁功能或者多个线程竞争偏向锁导致偏向锁升级为轻量级锁，则会尝试获取轻量级锁
+
+###### 轻量级锁-锁记录拷贝
+
+> 在线程执行同步块之前，JVM会先在当前线程的栈帧中创建一个名为锁记录（`Lock Record`）的空间，用于存储锁对象目前的`Mark Word`的拷贝（JVM会将对象头中的`Mark Word`拷贝到锁记录中，官方称为(`Displaced Mark Ward`）
+
+![](image/dismarkwprk.png)
 
 
 
+###### 轻量级锁-class poninter指向拷贝
+
+如上图所示：如果当前对象没有被锁定，那么锁标志位位`01`状态，JVM在执行当前线程时，首先会在当前线程栈帧中创建锁记录`Lock Record`的空间用于存储锁对象目前的`Mark Word`的拷贝。
+
+   然后，虚拟机使用CAS操作将标记字段`Mark Word`拷贝到锁记录中，并且将`Mark Word`更新位指向`Lock Record`的指针。如果更新成功了，那么这个线程就有用了该对象的锁，并且对象`Mark Word`的锁标志位更新位（`Mark Word中最后的2bit`）`00`，即表示此对象处于轻量级锁定状态，如图：
+
+![](image/zhixiangkaobei.png)
+
+
+
+###### 轻量级锁-class poninter指向拷贝失败
+
+>  如果这个更新操作失败，JVM会检查当前的`Mark Word`中是否存在指向当前线程的栈帧的指针。
+>
+> 如果有，说明该锁已经被获取，可以直接调用。
+>
+> 如果没有，则说明该锁被其他线程抢占了，如果有两条以上的线程竞争同一个锁，那轻量级锁就不再有效，直接膨胀位重量级锁，没有获得锁的线程会被阻塞。此时，锁的标志位为`10`.`Mark Word`中存储的时指向重量级锁的指针。
+
+###### 轻量级锁-解锁
+
+>  轻量级解锁时，会使用原子的CAS操作将`Displaced Mark Word`替换回到对象头中，如果成功，则表示没有发生竞争关系。如果失败，表示当前锁存在竞争关系。锁就会膨胀成重量级锁。两个线程同时争夺锁，导致锁膨胀的流程图如下：
+
+![](image/qingliangjisuopengzheng.png)
 
 ###### 重量级锁
 
