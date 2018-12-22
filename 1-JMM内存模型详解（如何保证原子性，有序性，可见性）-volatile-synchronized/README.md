@@ -295,11 +295,25 @@ public class Demo {
 
 # Synchronized 
 
+> **Synchronized如何实现锁**
+>
+> **为什么每个对象都可以称为锁**
+
 > 解决原子性，可见性，有序性
 >
-> 在多线程并发编程中synchronized一直是元老级角色，很多人都会称呼它为重量级锁。Java SE 1.6中为了减少获得锁和释放锁带来的性能消耗而引入的偏向锁和轻量级锁，以及锁的存储结构和升级过程。
+> 在多线程并发编程中synchronized一直是元老级角色，很多人都会称呼它为
+>
+> - **重量级锁**
+>
+> Java SE 1.6中为了减少获得锁和释放锁带来的性能消耗而引入的
+>
+> - **偏向锁 **
+>
+> - **轻量级锁**
+>
+> 以及锁的**存储结构**和**升级过程**。
 
-## synchronized代码演示
+## synchronized代码演示 
 
 ```java
 public class Demo {
@@ -332,7 +346,9 @@ public class Demo {
 
 > 作用于当前类对象加锁，进入同步代码前要获得当前类对象的锁
 
-> 全局锁
+
+
+> 全局锁 （Object.class）
 
 ```java
 public class Demo {
@@ -351,6 +367,8 @@ public class Demo {
 }
 ```
 
+> 全局锁 （静态方法）
+
 ```java
 public class Demo {
     private    static  int count  = 0;
@@ -366,22 +384,35 @@ public class Demo {
 }
 ```
 
+> 全局锁（静态变量）
+
+```java
+public class Demo {
+    private    static  int count  = 0;
+    private Object lock = new Object();
+    public  static void incr(){
+        synchronized (lock){
+            try {
+                Thread.sleep(1);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            count ++;
+        }
+    }
+}
+```
+
 
 
 #### 修饰代码块
 
 
 
-
-
 #### 修饰实例方法
 
-public class Demo {
-​    private    static  int count  = 0;
-
 ```java
-public  static void incr(){
-    synchronized (this){
+synchronized (this){
         try {
             Thread.sleep(1);
         } catch (InterruptedException e) {
@@ -389,8 +420,248 @@ public  static void incr(){
         }
         count ++;
     }
-  }
+```
+
+#### synchronized括号后面的对象
+
+> synchronized括号后面的对象是一把锁
+>
+> - 在java中任意一个对象都可以成为锁
+>
+> 简单来说，我们把object比喻是一个key，拥有这个key的线程才能执行这个方法，拿到这个key以后在执行方法过程中，这个key是随身携带的，并且只有一把。如果后续的线程想访问当前方法，因为没有key所以不能访问只能在门口等着，等之前的线程把key放回去。所以，synchronized锁定的对象必须是同一个，如果是不同对象，就意味着是不同的房间的钥匙，对于访问者来说是没有任何影响的
+
+#### synchronized在方法体上，在方法体里面javap的不同
+
+##### 方法体上
+
+> ACC_SYNCHRONIZED
+
+![](image/fanfangtishang.png)
+
+
+
+##### 方法体里面
+
+> - monitorenter
+>
+> - monitorexit
+
+![](image/fanfanglimian.png)
+
+#### synchronized的字节码指令(monitorenter/monitorexit)
+
+> 通过javap -v 来查看对应代码的字节码指令，对于同步块的实现使用了
+>
+> - monitorenter
+> - monitorexit
+>
+> 前面我们在讲JMM的时候，提到过这两个指令，他们隐式的执行了
+>
+> - Lock
+>
+> - UnLock
+>
+> 用于提供原子性保证。
+>
+> - monitorenter指令插入到同步代码块开始的位置
+>
+> - monitorexit指令插入到同步代码块结束位置
+>
+> jvm需要保证每个monitorenter都有一个monitorexit对应。
+>
+> 这两个指令，本质上都是对一个对象的
+>
+> - 监视器(monitor)进行获取，这个过程是排他的
+>
+> 也就是说同一时刻只能有一个线程获取到由synchronized所保护对象的监视器线程执行到monitorenter指令时，会尝试获取对象所对应的monitor所有权，也就是尝试获取对象的锁；而执行monitorexit，就是释放monitor的所有权
+
+
+
+#### synchronized的锁的原理
+
+>  jdk1.6以后对synchronized锁进行了优化，包含
+>
+> - 偏向锁
+>
+> - 轻量级锁
+>
+> - 重量级锁 
+>
+> 在了解synchronized锁之前，我们需要了解两个重要的概念，一个是对象头、另一个是monitor
+
+##### 锁存放在哪个地方(对象头)
+
+> 对象在内存中的布局分为三块区域：
+>
+> - 对象头
+>
+> - 实例数据
+>
+> - 对齐填充
+>
+> Java对象头是实现synchronized的锁对象的**基础**，一般而言，synchronized使用的**锁对象是存储在Java对象头里**。它是轻量级锁和偏向锁的关键
+
+
+
+###### mark work
+
+> Mark Word用于存储对象自身的运行时数据，
+>
+> - 哈希码（HashCode）
+>
+> - GC分代年龄
+>
+> - 锁状态标志
+>
+> - 线程持有的锁
+>
+> - 偏向线程 ID
+>
+> - 偏向时间戳等等。
+>
+> Java对象头一般占有两个机器码（在32位虚拟机中，1个机器码等于4字节，也就是32bit）
+
+
+
+> 32位
+
+![](image/newmarkwork.png)
+
+
+
+> 64位
+
+###### 对象头JVM源码中的体现(oop.hpp)
+
+> 如果想更深入了解对象头在JVM源码中的定义，需要关心几个文件，oop.hpp/markOop.hpp
+> oop.hpp，每个 Java Object 在 JVM 内部都有一个 native 的 C++ 对象 oop/oopDesc 与之对应。先在oop.hpp中看oopDesc的定义
+
+```c++
+
+class oopDesc {
+  friend class VMStructs;
+ private:
+  volatile markOop  _mark;
+  union _metadata {
+    wideKlassOop    _klass;
+    narrowOop       _compressed_klass;
+  } _metadata;
 }
 ```
+
+
+
+######  对象头JVM源码中的体现(markOop.hpp)
+
+> 从上面的枚举定义中可以看出，对象头中主要包含了GC分代年龄、锁状态标记、哈希码、epoch等信息。
+
+   ```c++
+
+enum { age_bits                 = 4,
+      lock_bits                = 2,
+      biased_lock_bits         = 1,
+      max_hash_bits            = BitsPerWord - age_bits - lock_bits - biased_lock_bits,
+      hash_bits                = max_hash_bits > 31 ? 31 : max_hash_bits,
+      cms_bits                 = LP64_ONLY(1) NOT_LP64(0),
+      epoch_bits               = 2
+};
+   ```
+
+
+
+> 对象的状态一共有五种，分别是无锁态、轻量级锁、重量级锁、GC标记和偏向锁。在32位的虚拟机中有两个Bits是用来存储锁的标记为的，但是我们都知道，两个bits最多只能表示四种状态：00、01、10、11，那么第五种状态如何表示呢 ，就要额外依赖1Bit的空间，使用0和1来区分。
+>
+> - locked_value(00) = 0
+>
+> - unlocked_value(01) = 1
+>
+> - monitor_value(10) = 2
+>
+> - marked_value(11) = 3
+>
+> - biased*lock*pattern(101) = 5
+
+markOop.hpp类中有关于对象状态的定义：
+
+```c++
+enum { locked_value             = 0,
+         unlocked_value           = 1,
+         monitor_value            = 2,
+         marked_value             = 3,
+         biased_lock_pattern      = 5
+  };
+```
+
+
+
+
+
+##### synchronized如何实现锁(锁升级和获取过程)
+
+
+
+
+
+
+
+
+
+##### 为什么任何一个对象都可以锁
+
+-  oop.hpp下的oopDesc类是JVM对象的顶级基类，所以每个object对象都包含markOop
+
+```c++
+class oopDesc {
+  friend class VMStructs;
+ private:
+  volatile markOop  _mark;
+  union _metadata {
+    wideKlassOop    _klass;
+    narrowOop       _compressed_klass;
+  } _metadata;
+}
+```
+
+- markOop.hpp中markOopDesc继承自oopDesc，并扩展了自己的monitor方法，这个方法返回一个
+  ObjectMonitor指针对象
+
+```c++
+  ObjectMonitor* monitor() const {
+    assert(has_monitor(), "check");
+    // Use xor instead of &~ to provide one extra tag-bit check.
+    return (ObjectMonitor*) (value() ^ monitor_value);
+  }
+```
+
+-  objectMonitor.hpp,在hotspot虚拟机中，采用ObjectMonitor类来实现monitor
+
+```c++
+  ObjectMonitor() {
+    _header       = NULL;
+    _count        = 0;
+    _waiters      = 0,
+    _recursions   = 0;
+    _object       = NULL;
+    _owner        = NULL;
+    _WaitSet      = NULL;
+    _WaitSetLock  = 0 ;
+    _Responsible  = NULL ;
+    _succ         = NULL ;
+    _cxq          = NULL ;
+    FreeNext      = NULL ;
+    _EntryList    = NULL ;
+    _SpinFreq     = 0 ;
+    _SpinClock    = 0 ;
+    OwnerIsThread = 0 ;
+    _previous_owner_tid = 0;
+  }
+```
+
+
+
+
+
+##### 
+
 
 
