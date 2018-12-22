@@ -500,10 +500,12 @@ synchronized (this){
 > - 对齐填充
 >
 > Java对象头是实现synchronized的锁对象的**基础**，一般而言，synchronized使用的**锁对象是存储在Java对象头里**。它是轻量级锁和偏向锁的关键
+>
+> 对象头分为  mark work 与 Klass Pointer 
 
 
 
-###### mark work
+###### 对象头之mark work（标记字段）
 
 > Mark Word用于存储对象自身的运行时数据，
 >
@@ -531,7 +533,7 @@ synchronized (this){
 
 > 64位
 
-###### 对象头JVM源码中的体现(oop.hpp)
+###### mark work在JVM源码中的体现(oop.hpp)
 
 > 如果想更深入了解对象头在JVM源码中的定义，需要关心几个文件，oop.hpp/markOop.hpp
 > oop.hpp，每个 Java Object 在 JVM 内部都有一个 native 的 C++ 对象 oop/oopDesc 与之对应。先在oop.hpp中看oopDesc的定义
@@ -551,7 +553,7 @@ class oopDesc {
 
 
 
-######  对象头JVM源码中的体现(markOop.hpp)
+######  mark work在JVM源码中的体现(markOop.hpp)
 
 > 从上面的枚举定义中可以看出，对象头中主要包含了GC分代年龄、锁状态标记、哈希码、epoch等信息。
 
@@ -591,6 +593,18 @@ enum { locked_value             = 0,
          biased_lock_pattern      = 5
   };
 ```
+
+###### 对象头之Klass Pointer(类型指针)
+
+>  对象指向它的类元数据的指针
+>
+> - 虚拟机通过这个指针来确定这个对象是哪个类的实例。
+>
+> 并不是所有的虚拟机实现都必须在对象数据上保留类型指针，换句话说，查找对象的元数据信息并不一定要经过对象本身.
+>
+> 如果对象是一个Java数组，那在对象头中还必须有一块用于记录数据长度的数据，因为虚拟机可以通过普通Java对象的元数据信息确定Java对象的大小，但是从数组的原数组中却无法确定数组的大小。
+
+
 
 ##### 为什么任何一个对象都可以锁
 
@@ -647,7 +661,7 @@ class oopDesc {
 
 ##### synchronized如何实现锁(锁升级和获取过程)
 
-> https://www.jianshu.com/p/dab7745c0954
+> 部分参考：https://www.jianshu.com/p/dab7745c0954
 
 > 了解了对象头以及monitor以后，接下来去分析synchronized的锁的实现，就会非常简单了。前面讲过
 > synchronized的锁是进行过优化的，引入了偏向锁、轻量级锁；锁的级别从低到高逐步升级
@@ -662,9 +676,79 @@ class oopDesc {
 
 
 
-###### 自旋锁（CAS）
+###### 自旋锁
+
+> 1.8以前    -XX:PreBlockSpin 
+>
+> 1.8+    由系统自己确定
 
 > 自旋锁就是让不满足条件的线程等待一段时间，而不是立即挂起。看持有锁的线程是否能够很快释放锁。怎么自旋呢？其实就是一段没有任何意义的循环。虽然它通过占用处理器的时间来避免线程切换带来的开销，但是如果持有锁的线程不能在很快释放锁，那么自旋的线程就会浪费处理器的资源，因为它不会做任何有意义的工作。所以，自旋等待的时间或者次数是有一个限度的，如果自旋超过了定义的时间仍然没有获取到锁，则该线程应该被挂起
+
+
+
+###### 自适应自旋锁
+
+> 如果线程锁在线程自旋刚结束就释放掉了锁，那么是不是有点得不偿失。所以这时候我们需要更加聪明的锁来实现更加灵活的自旋。来提高并发的性能
+
+> 在JDK 1.6中引入了自适应自旋锁。这就意味着自旋的时间不再固定了。
+>
+> 而是由前一次在同一个锁上的自旋 时间及锁的拥有者的状态来决定的。
+>
+> 如果在同一个锁对象上，自旋等待刚刚成功获取过锁，并且持有锁的线程正在运行中，那么JVM会认为该锁自旋获取到锁的可能性很大，会自动增加等待时间。比如增加到100此循环。
+>
+> 相反，如果对于某个锁，自旋很少成功获取锁。那再以后要获取这个锁时将可能省略掉自旋过程，以避免浪费处理器资源。有了自适应自旋，JVM对程序的锁的状态预测会越来越准备，JVM也会越来越聪明。
+
+
+
+###### 锁消除
+
+> 锁消除时指虚拟机即时编译器再运行时。
+>
+> 对一些代码上要求同步，但是被检测到不可能存在共享数据竞争的锁进行消除。
+>
+> 锁消除的主要判定依据来源于逃逸分析的数据支持。
+>
+> 意思就是：JVM会判断再一段程序中的同步明显不会逃逸出去从而被其他线程访问到，那JVM就把它们当作栈上数据对待，认为这些数据时线程独有的，不需要加同步。此时就会进行锁消除。
+
+   
+
+```java
+public static String test03(String s1, String s2, String s3) {
+    String s = s1 + s2 + s3;
+    return s;
+}
+```
+
+> 由于`String`是一个不可变类，对字符串的连接操作总是通过生成的新的`String`对象来进行的。因此Javac编译器会对`String`连接做自动优化。在JDK 1.5之前会使用`StringBuffer`对象的连续`appen（）`操作，在JDK 1.5及以后的版本中，会转化为`StringBuidler`对象的连续`append（）`操作。
+
+```java
+public static java.lang.String test03(java.lang.String, java.lang.String, java.lang.String);
+    descriptor: (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+    flags: ACC_PUBLIC, ACC_STATIC
+    Code:
+      stack=2, locals=4, args_size=3
+         0: new           #2                  // class java/lang/StringBuilder
+         3: dup
+         4: invokespecial #3                  // Method java/lang/StringBuilder."<init>":()V
+         7: aload_0
+         8: invokevirtual #4                  // Method java/lang/StringBuilder.append:(Ljava/lang/String;)Ljava/lang/StringBuilder;
+        11: aload_1
+        12: invokevirtual #4                  // Method java/lang/StringBuilder.append:(Ljava/lang/String;)Ljava/lang/StringBuilder;
+        15: aload_2
+        16: invokevirtual #4                  // Method java/lang/StringBuilder.append:(Ljava/lang/String;)Ljava/lang/StringBuilder;
+        19: invokevirtual #5                  // Method java/lang/StringBuilder.toString:()Ljava/lang/String;
+        22: astore_3
+        23: aload_3
+        24: areturn
+```
+
+> `StringBuidler`是安全同步的。但是在上述代码中，JVM判断该段代码并不会逃逸，则将该代码带默认为线程独有的资源，则并不需要同步，所以执行了锁消除操作。
+
+
+
+###### 锁粗话
+
+
 
 
 
