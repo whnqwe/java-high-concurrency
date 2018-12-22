@@ -698,7 +698,7 @@ class oopDesc {
 >
 > 相反，如果对于某个锁，自旋很少成功获取锁。那再以后要获取这个锁时将可能省略掉自旋过程，以避免浪费处理器资源。有了自适应自旋，JVM对程序的锁的状态预测会越来越准备，JVM也会越来越聪明。
 
-
+###### 锁重入
 
 ###### 锁消除
 
@@ -792,6 +792,12 @@ class oopDesc {
 
 ![](image/qingliangjisuopengzheng.png)
 
+###### 锁膨胀
+
+
+
+
+
 ###### 重量级锁
 
 > 重量级锁通过对象内部的监视器（monitor）实现，其中monitor的本质是依赖于底层操作系统的Mutex Lock实现，操作系统实现线程之间的切换需要从
@@ -809,4 +815,52 @@ class oopDesc {
 ![](image/monitor.png)
 
 
+
+```c++
+  ObjectMonitor() {
+    _header       = NULL; //markwork对象头
+    _count        = 0;
+    _waiters      = 0, //等待线程数
+    _recursions   = 0; //重入次数
+    _object       = NULL;
+    _owner        = NULL; //指向获得ObectWaiter对象的线程
+    _WaitSet      = NULL; //处于wait状态的线程，会被加入watieset
+    _WaitSetLock  = 0 ;
+    _Responsible  = NULL ;
+    _succ         = NULL ;
+    _cxq          = NULL ;//JVM为每一个尝试进去synchronized的线程创建一个ObjectWaiter并加入到_cxq中
+    FreeNext      = NULL ;
+    _EntryList    = NULL ; //处于等待锁BLOCK状态的线程，由ObjectWaiter组成的双向链表，JVM会从链表中取出一个ObjectWaiter唤醒对应的线程
+    _SpinFreq     = 0 ;
+    _SpinClock    = 0 ;
+    OwnerIsThread = 0 ;
+    _previous_owner_tid = 0; //监视器前一个拥有者的Id
+  }
+```
+
+###### 重量级锁-ObjectWaiter
+
+> 双向链表
+
+```c++
+class ObjectWaiter : public StackObj {
+ public:
+  enum TStates { TS_UNDEF, TS_READY, TS_RUN, TS_WAIT, TS_ENTER, TS_CXQ } ;
+  enum Sorted  { PREPEND, APPEND, SORTED } ;
+  ObjectWaiter * volatile _next;
+  ObjectWaiter * volatile _prev;
+  Thread*       _thread;
+  jlong         _notifier_tid;
+  ParkEvent *   _event;
+  volatile int  _notified ;
+  volatile TStates TState ;
+  Sorted        _Sorted ;           // List placement disposition
+  bool          _active ;           // Contention monitoring is enabled
+ public:
+  ObjectWaiter(Thread* thread);
+
+  void wait_reenter_begin(ObjectMonitor *mon);
+  void wait_reenter_end(ObjectMonitor *mon);
+};
+```
 
