@@ -170,4 +170,44 @@ public class RWLockDemo {
 
 
 > 总结：AQS ---->FIFO ---->靠继承---->独占(ReentrantLock)和共享(ReentrantReadWriteLock)
+>
+> 总结：线程包装NODE ----> 从head添加 ---->从tail添加
+
+
+
+### AQS的内部实现
+
+> 同步器依赖内部的同步队列（一个FIFO双向队列）来完成同步状态的管理，当前线程获取同步状态失败时，同步器会将当前线程以及等待状态等信息构造成为一个节点（Node）并将其加入同步队列，同时会阻塞当前线程，当同步状态释放时，会把首节点中的线程唤醒，使其再次尝试获取同步状态。
+
+
+
+```java
+static final class Node {
+  int waitStatus; //表示节点的状态，包含cancelled（取消）；condition 表示节点在等待condition也就是在condition队列中
+  Node prev; //前继节点
+  Node next; //后继节点
+  Node nextWaiter; //存储在condition队列中的后继节点
+  Thread thread; //当前线程
+}
+```
+
+
+
+> AQS类底层的数据结构是使用双向链表，是队列的一种实现。包括一个head节点和一个tail节点，分别表示头结点和尾节点，其中头结点不存储Thread，仅保存next结点的引用。
+
+> compareAndSetTail()  添加节点到尾部
+>
+> compareAndSetHead() 添加节点到头部
+>
+>
+
+
+
+![](image/AQS-1.png)
+
+> 当一个线程成功地获取了同步状态（或者锁），其他线程将无法获取到同步状态，转而被构造成为节点并加入到同步队列中，而这个加入队列的过程必须要保证线程安全，因此同步器提供了一个基于CAS的设置尾节点的方法：compareAndSetTail(Node expect,Nodeupdate)，它需要传递当前线程“认为”的尾节点和当前节点，只有设置成功后，当前节点才正式与之前的尾节点建立关联。
+
+
+
+
 
