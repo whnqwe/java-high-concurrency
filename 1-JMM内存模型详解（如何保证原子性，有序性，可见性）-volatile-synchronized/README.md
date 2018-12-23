@@ -800,6 +800,8 @@ class oopDesc {
 
 ###### 重量级锁
 
+> syncchronized是非公平锁（最后进入队列的通过自旋可以直接获得锁）
+
 > 重量级锁通过对象内部的监视器（monitor）实现，其中monitor的本质是依赖于底层操作系统的Mutex Lock实现，操作系统实现线程之间的切换需要从
 >
 > - 用户态到内核态的切换
@@ -813,6 +815,20 @@ class oopDesc {
 > 他的锁的获取过程的体现会简单很多
 
 ![](image/monitor.png)
+
+
+
+> _cxq
+>
+> - 获得锁失败 进入_cxq队列   
+>
+> - 进入之后，自旋，失败挂起（park）
+
+
+
+> _entryList
+>
+> _entryList为空，_cxq不为空的时候，_cxq从末尾取出一个线程，放入到entryList中
 
 
 
