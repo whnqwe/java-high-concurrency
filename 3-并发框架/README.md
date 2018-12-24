@@ -149,7 +149,7 @@ public class RWLockDemo {
 
 > Lock之所以能实现线程安全的锁
 >
-> 主要的核心是**AQS**(AbstractQueuedSynchronizer),AbstractQueuedSynchronizer
+> 主要的核心是**AQS**(c),AbstractQueuedSynchronizer
 >
 > 提供了一个**FIFO**队列，可以看做是一个用来实现锁以及其他需要同步功能的框架。这里简称该类为				AQS。
 >
@@ -179,8 +179,6 @@ public class RWLockDemo {
 
 > 同步器依赖内部的同步队列（一个FIFO双向队列）来完成同步状态的管理，当前线程获取同步状态失败时，同步器会将当前线程以及等待状态等信息构造成为一个节点（Node）并将其加入同步队列，同时会阻塞当前线程，当同步状态释放时，会把首节点中的线程唤醒，使其再次尝试获取同步状态。
 
-
-
 ```java
 static final class Node {
   int waitStatus; //表示节点的状态，包含cancelled（取消）；condition 表示节点在等待condition也就是在condition队列中
@@ -207,7 +205,126 @@ static final class Node {
 
 > 当一个线程成功地获取了同步状态（或者锁），其他线程将无法获取到同步状态，转而被构造成为节点并加入到同步队列中，而这个加入队列的过程必须要保证线程安全，因此同步器提供了一个基于CAS的设置尾节点的方法：compareAndSetTail(Node expect,Nodeupdate)，它需要传递当前线程“认为”的尾节点和当前节点，只有设置成功后，当前节点才正式与之前的尾节点建立关联。
 
+![](image/AQStail.png)
+
+> 同步队列遵循FIFO，首节点是获取同步状态成功的节点，首节点的线程在释放同步状态时，将会唤醒后继节点，而后继节点将会在获取同步状态成功时将自己设置为首节点。
 
 
 
+![](image/AQShead.png)
+
+> 设置首节点是通过获取同步状态成功的线程来完成的，由于只有一个线程能够成功获取到同步状态，因此设置头节点的方法并不需要使用CAS来保证，它只需要将首节点设置成为原首节点的后继节点并断开原首节点的next引用即可
+
+ 
+
+#### compareAndSet
+
+> AQS中，除了本身的链表结构以外，还有一个很关键的功能，就是CAS，这个是保证在多线程并发的情况下保证线程安全的前提下去把线程加入到AQS中的方法,可以简单理解为乐观锁
+
+```java
+private final boolean compareAndSetHead(Node update) {
+    return unsafe.compareAndSwapObject(this, headOffset, null, update);
+}
+```
+
+> 这个方法里面首先，用到了unsafe类，(Unsafe类是在sun.misc包下，不属于Java标准。但是很多Java的基础类库，包括一些被广泛使用的高性能开发库都是基于Unsafe类开发的，比如Netty、Hadoop、Kafka等；Unsafe可认为是Java中留下的后门，提供了一些低层次操作，如直接内存访问、线程调度等)，然后调用了compareAndSwapObject这个方法
+
+```java
+    public final native boolean compareAndSwapObject(Object var1, long var2, Object var4, Object var5);
+
+```
+
+> 这个是一个native方法
+>
+> - 第一个参数为需要改变的对象
+>
+> - 第二个为偏移量(即之前求出来的headOffset的值)
+>
+> - 第三个参数为期待的值
+>
+> - 第四个为更新后的值
+
+> 如果var2 == var4  ，那么就将var2的值，设置为var5.
+
+>  unsafe.cpp
+
+```c++
+UNSAFE_ENTRY(jboolean, Unsafe_CompareAndSwapObject(JNIEnv *env, jobject unsafe, jobject
+obj, jlong offset, jobject e_h, jobject x_h))
+ UnsafeWrapper("Unsafe_CompareAndSwapObject");
+ oop x = JNIHandles::resolve(x_h); // 新值
+ oop e = JNIHandles::resolve(e_h); // 预期值
+ oop p = JNIHandles::resolve(obj);
+ HeapWord* addr = (HeapWord *)index_oop_from_field_offset_long(p, offset);// 在内存中的
+具体位置
+ oop res = oopDesc::atomic_compare_exchange_oop(x, addr, e, true);// 调用了另一个方法，实
+际上就是通过cas操作来替换内存中的值是否成功
+ jboolean success  = (res == e);  // 如果返回的res等于e，则判定满足compare条件（说明res应该为
+内存中的当前值），但实际上会有ABA的问题
+ if (success) // success为true时，说明此时已经交换成功（调用的是最底层的cmpxchg指令）
+  update_barrier_set((void*)addr, x); // 每次Reference类型数据写操作时，都会产生一个Write
+Barrier暂时中断操作，配合垃圾收集器
+ return success;
+UNSAFE_END
+```
+
+## ReentrantLock的实现原理分析
+
+> 之所以叫重入锁是因为同一个线程如果已经获得了锁，那么后续该线程调用lock方法时不需要再次获取锁，也就是不会阻塞；
+>
+> 重入锁提供了两种实现
+>
+> - 一种是非公平的重入锁
+>
+> - 另一种是公平的重入锁
+>
+>
+> 怎么理解公平和非公平呢？
+>
+> 如果在绝对时间上，先对锁进行获取的请求一定先被满足获得锁，那么这个锁就是公平锁
+>
+> 反之，就是不公平的。简单来说公平锁就是等待时间最长的线程最优先获取锁。
+
+### 构造方法
+
+#### 默认非公平锁
+
+```java
+public ReentrantLock() {
+    sync = new NonfairSync();
+}
+```
+
+#### 指定公平锁
+
+```java
+public ReentrantLock(boolean fair) {
+    sync = fair ? new FairSync() : new NonfairSync();
+}
+```
+
+#### 非公平锁的实现流程时序图
+
+![](image/feigongping.png)
+
+
+
+#### NonfairSync.lock
+
+```java
+    static final class NonfairSync extends Sync {
+        private static final long serialVersionUID = 7316153563782823691L;
+
+        final void lock() {
+            if (compareAndSetState(0, 1))
+                setExclusiveOwnerThread(Thread.currentThread());
+            else
+                acquire(1);
+        }
+
+        protected final boolean tryAcquire(int acquires) {
+            return nonfairTryAcquire(acquires);
+        }
+    }
+```
 
