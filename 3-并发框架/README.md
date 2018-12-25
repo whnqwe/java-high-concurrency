@@ -311,14 +311,19 @@ public ReentrantLock(boolean fair) {
 
 #### NonfairSync.lock
 
+> compareAndSetState(0, 1)
+
 ```java
     static final class NonfairSync extends Sync {
         private static final long serialVersionUID = 7316153563782823691L;
 
         final void lock() {
+            //现有线程获得锁
             if (compareAndSetState(0, 1))
+                //保存当前线程
                 setExclusiveOwnerThread(Thread.currentThread());
             else
+                //已经有线程获得锁
                 acquire(1);
         }
 
@@ -327,4 +332,119 @@ public ReentrantLock(boolean fair) {
         }
     }
 ```
+
+##### compareAndSetState
+
+> 通过cas算法去改变state的值，而这个state是什么呢？ 在AQS中存在一个变量state
+
+> 对于ReentrantLock来说
+
+> - 如果state=0表示无锁状态、
+
+> -  果state>0表示有锁状态。
+>
+> 所以在这里，是表示当前的state如果等于0，则替换为1，如果替换成功表示获取锁成功了
+
+> ReentrantLock是可重入锁，所以持有锁的线程可以多次加锁，经过判断加锁线程就是当前持有锁的线程时（即exclusiveOwnerThread==Thread.currentThread()），即可加锁，每次加锁都会将state的值+1，state等于几，就代表当前持有锁的线程加了几次锁;解锁时每解一次锁就会将state减1，state减到0后，锁就被释放掉，这时其它线程可以加锁；
+
+##### AbstractQueuedSynchronizer.acquire
+
+> 如果CAS操作未能成功，说明state已经不为0，此时继续acquire(1)操作,acquire是AQS中的方法 当多个线程同时进入这个方法时，首先通过cas去修改state的状态，如果修改成功表示竞争锁成功，竞争失败的，tryAcquire会返回false
+>
+> > 这个方法的主要作用是
+> >
+> > - 尝试获取独占锁，获取成功则返回，否则
+> > - 自旋获取锁，并且判断中断标识，如果中断标识为true，则设置线程中断
+> > - addWaiter方法把当前线程封装成Node，并添加到队列的尾部
+
+```java
+    public final void acquire(int arg) {
+        if (!tryAcquire(arg) &&
+            acquireQueued(addWaiter(Node.EXCLUSIVE), arg))
+            selfInterrupt();
+    }
+```
+
+###### tryAcquire
+
+```java
+        protected final boolean tryAcquire(int acquires) {
+            return nonfairTryAcquire(acquires);
+        }
+```
+
+###### nonfairTryAcquire
+
+```java
+        final boolean nonfairTryAcquire(int acquires) {
+            final Thread current = Thread.currentThread();
+            int c = getState();////获取当前的状态，前面讲过，默认情况下是0表示无锁状态
+            if (c == 0) {
+                if (compareAndSetState(0, acquires)) {////通过cas来改变state状态的值，如果更新成功，表示获取锁成功, 这个操作外部方法lock()就做过一次，这里再做只是为了再尝试一次，尽量以最简单的方式获取锁。
+                    setExclusiveOwnerThread(current);
+                    return true;
+                }
+            }
+            else if (current == getExclusiveOwnerThread()) {////如果当前线程等于获取锁的线程，表示重入，直接累加重入次数
+                int nextc = c + acquires;
+                if (nextc < 0) //如果这个状态值越界，抛出异常；如果没有越界，则设置后返回true
+                    throw new Error("Maximum lock count exceeded");
+                setState(nextc);
+                return true;
+            }
+            return false;//获取锁失败，返回false
+        }
+```
+
+
+
+###### addWaiter
+
+> Node mode（addWaiter(Node.EXCLUSIVE), arg)）
+>
+> - Node.EXCLUSIVE(独占)
+> - static final Node SHARED = new Node(); （共享）
+
+```java
+
+private Node addWaiter(Node mode) {
+    Node node = new Node(Thread.currentThread(), mode);////创建一个独占的Node节点,mode为排他模式
+    Node pred = tail; //将最后一个阶段赋值给pred  // // tail是AQS的中表示同步队列队尾的属性，刚开始为null，所以进行enq(node)方法
+    if (pred != null) {
+        node.prev = pred;
+        if (compareAndSetTail(pred, node)) {
+            pred.next = node;
+            return node;
+        }
+    }
+    enq(node);// 如果队列为null或者CAS设置新的tail失败
+    return node;
+}
+```
+
+###### enq
+
+> enq就是通过自旋操作把当前节点加入到队列中
+
+```java
+    private Node enq(final Node node) {
+        for (;;) {////无效的循环，为什么采用for(;;)，是因为它执行的指令少，不占用寄存器
+            Node t = tail;// 此时head, tail都为null
+            if (t == null) { 
+                if (compareAndSetHead(new Node()))
+                    tail = head;
+            } else {
+                node.prev = t;
+                if (compareAndSetTail(t, node)) {
+                    t.next = node;
+                    return t;
+                }
+            }
+        }
+    }
+```
+
+
+
+###### acquireQueued
 
