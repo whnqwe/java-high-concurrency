@@ -378,7 +378,7 @@ public ReentrantLock(boolean fair) {
 ```java
         final boolean nonfairTryAcquire(int acquires) {
             final Thread current = Thread.currentThread();
-            int c = getState();////获取当前的状态，前面讲过，默认情况下是0表示无锁状态
+            int c = getState();// 获取当前的状态，前面讲过，默认情况下是0表示无锁状态
             if (c == 0) {
                 if (compareAndSetState(0, acquires)) {////通过cas来改变state状态的值，如果更新成功，表示获取锁成功, 这个操作外部方法lock()就做过一次，这里再做只是为了再尝试一次，尽量以最简单的方式获取锁。
                     setExclusiveOwnerThread(current);
@@ -444,7 +444,177 @@ private Node addWaiter(Node mode) {
     }
 ```
 
-
+![](image/enq.png)
 
 ###### acquireQueued
+
+> addWaiter返回了插入的节点，作为acquireQueued方法的入参,这个方法主要用于争抢锁
+
+```java
+    final boolean acquireQueued(final Node node, int arg) {
+        boolean failed = true;
+        try {
+            boolean interrupted = false;
+            for (;;) {
+                final Node p = node.predecessor();//获取prev节点,若为null即刻抛出NullPointException
+                if (p == head && tryAcquire(arg)) {// 如果前驱为head才有资格进行锁的抢夺
+                    setHead(node);//// 获取锁成功后就不需要再进行同步操作了,获取锁成功的线程作为新的head节点
+         //凡是head节点,head.thread与head.prev永远为null, 但是head.next不为null
+                    p.next = null; // help GC
+                    failed = false; ////获取锁成功
+                    return interrupted;
+                }
+                //如果获取锁失败，则根据节点的waitStatus决定是否需要挂起线程
+                if (shouldParkAfterFailedAcquire(p, node) &&
+                    parkAndCheckInterrupt())// 若前面为true,则执行挂起,待下次唤醒的时候检测中断的标志
+                    interrupted = true;
+            }
+        } finally {
+            if (failed)//如果抛出异常则取消锁的获取,进行出队(sync queue)操作
+                cancelAcquire(node);
+        }
+    }
+```
+
+![](image/lock3.png)
+
+###### node.predecessor
+
+```java
+final Node predecessor() throws NullPointerException {
+    Node p = prev;
+    if (p == null)
+        throw new NullPointerException();
+    else
+        return p;
+}
+```
+
+###### shouldParkAfterFailedAcquire
+
+> 惊群效应
+
+> 从上面的分析可以看出，只有队列的第二个节点可以有机会争用锁，如果成功获取锁，则此节点晋升为头节点。对于第三个及以后的节点，if (p == head)条件不成立，首先进行shouldParkAfterFailedAcquire(p, node)操作方法是判断一个争用锁的线程是否应该被阻塞。它首先判断一个节点的前置节点的状态是否为Node.SIGNAL，如果是，是说明此节点已经将状态设置-如果锁释放，则应当通知它，所以它可以安全的阻塞了，返回true
+
+```java
+    private static boolean shouldParkAfterFailedAcquire(Node pred, Node node) {
+        int ws = pred.waitStatus; ////前继节点的状态
+        if (ws == Node.SIGNAL) //如果是SIGNAL状态，意味着当前线程需要被unpark唤醒
+            return true;
+        //如果前节点的状态大于0，即为CANCELLED状态时，则会从前节点开始逐步循环找到一个没有被“CANCELLED”节点设置为当前节点的前节点，返回false。在下次循环执行shouldParkAfterFailedAcquire时，返回true。这个操作实际是把队列中CANCELLED的节点剔除掉。
+        if (ws > 0) { //// 如果前继节点是“取消”状态，则设置 “当前节点”的 “当前前继节点” 为 “‘原前继节点'的前继节点”。
+            do {
+                node.prev = pred = pred.prev;
+            } while (pred.waitStatus > 0);
+            pred.next = node;
+        } else { //如果前继节点为“0”或者“共享锁”状态，则设置前继节点为SIGNAL状态。
+            compareAndSetWaitStatus(pred, ws, Node.SIGNAL);
+        }
+        return false;
+    }
+```
+
+> 解读：假如有t1,t2两个线程都加入到了链表中
+>
+> 如果head节点位置的线程一直持有锁，那么t1和t2就是挂起状态，而HEAD以及Thread1的的awaitStatus都是
+>
+> SIGNAL，在多次尝试获取锁失败以后，就会通过下面的方法进行挂起（这个地方就是避免了惊群效应，每个节点只需要关心上一个节点的状态即可）
+>
+> SIGNAL：值为-1，表示当前节点的的后继节点将要或者已经被阻塞，在当前节点释放的时候需要unpark后继节点；
+>
+> CONDITION：值为-2，表示当前节点在等待condition，即在condition队列中；
+>
+> PROPAGATE：值为-3，表示releaseShared需要被传播给后续节点（仅在共享模式下使用）
+
+
+
+###### parkAndCheckInterrupt
+
+> 如果shouldParkAfterFailedAcquire返回了true，则会执行：“parkAndCheckInterrupt()”方法，它是通过LockSupport.park(this)将当前线程挂起到WATING状态，它需要等待一个中断、unpark方法来唤醒它，通过这样一种FIFO的机制的等待，来实现了Lock的操作
+
+```java
+  private final boolean parkAndCheckInterrupt() {
+        LockSupport.park(this); //LockSupport提供park()和unpark()方法实现阻塞线程和解除线程阻塞
+        return Thread.interrupted();
+    }
+```
+
+
+
+#### NonfairSync.unlock
+
+> 加锁的过程分析完以后，再来分析一下释放锁的过程，调用release方法，这个方法里面做两件事
+>
+> 1，释放锁 
+>
+> 2，唤醒park的线程
+
+```java
+public void unlock() {
+    sync.release(1);
+}
+```
+
+#####  release
+
+```java
+    public final boolean release(int arg) {
+        if (tryRelease(arg)) {
+            Node h = head;
+            if (h != null && h.waitStatus != 0)
+                unparkSuccessor(h);
+            return true;
+        }
+        return false;
+    }
+```
+
+##### tryRelease
+
+> 这个动作可以认为就是一个设置锁状态的操作，而且是将状态减掉传入的参数值（参数是1），如果结果状态为0，就将排它锁的Owner设置为null，以使得其它的线程有机会进行执行。 在排它锁中，加锁的时候状态会增加1（当然可以自己修改这个值），在解锁的时候减掉1，同一个锁，在可以重入后，可能会被叠加为2、3、4这些值，只有unlock()的次数与lock()的次数对应才会将Owner线程设置为空，而且也只有这种情况下才会返回true。
+
+```java
+protected final boolean tryRelease(int releases) {
+    int c = getState() - releases; // 这里是将锁的数量减1
+    if (Thread.currentThread() != getExclusiveOwnerThread()) // 如果释放的线程和获取锁的线程不是同一个，抛出非法监视器状态异常
+        throw new IllegalMonitorStateException();
+    boolean free = false;
+    if (c == 0) {
+        // 由于重入的关系，不是每次释放锁c都等于0，
+  // 直到最后一次释放锁时，才会把当前线程释放
+        free = true;
+        setExclusiveOwnerThread(null);
+    }
+    setState(c);
+    return free;
+}
+
+```
+
+
+
+#### LockSupport
+
+> LockSupport类是Java6引入的一个类，提供了基本的线程同步原语。LockSupport实际上是调用了Unsafe类里的函数，归结到Unsafe里，只有两个函数：
+
+```java
+public native void unpark(Thread jthread); 
+public native void park(boolean isAbsolute, long time);
+```
+
+> unpark函数为线程提供“许可(permit)”，线程调用park函数则等待“许可”。这个有点像信号量，但是这个“许可”是不能叠加的，“许可”是一次性的。
+>
+> permit当于0/1的开关，默认是0，调用一次unpark就加1变成了1.调用一次park会消费permit，又会变成0。 如果再调用一次park会阻塞，因为permit已经是0了。直到permit变成1.这时调用unpark会把permit设置为1.每个线程都有一个相关的permit，permit最多只有一个，重复调用unpark不会累积
+>
+> 在使用LockSupport之前，我们对线程做同步，只能使用wait和notify，但是wait和notify其实不是很灵活，并且耦合性很高，调用notify必须要确保某个线程处于wait状态，而park/unpark模型真正解耦了线程之间的同步，先后顺序没有没有直接关联，同时线程之间不再需要一个Object或者其它变量来存储状态，不再需要关心对方的状态
+
+
+
+#### FairSync.lock
+
+```java
+final void lock() {
+    acquire(1);
+}
+```
 
