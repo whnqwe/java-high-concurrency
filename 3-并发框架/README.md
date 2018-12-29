@@ -618,3 +618,80 @@ final void lock() {
 }
 ```
 
+#### Condition
+
+> 任意一个Java对象，都拥有一组监视器方法（定义在java.lang.Object上），主要包括wait()、notify()以及notifyAll()方法，这些方法与synchronized同步关键字配合，可以实现等待/通知模式JUC包提供了Condition来对锁进行精准控制，Condition是一个多线程协调通信的工具类，可以让某些线程一起等待某个条件（condition），只有满足条件时，线程才会被唤醒
+
+```java
+public class ThreadWait extends Thread {
+
+    private Lock lock;
+    private Condition condition;
+
+    public ThreadWait(Lock lock,Condition condition) {
+        this.lock = lock;
+        this.condition = condition;
+    }
+
+    @Override
+    public void run() {
+
+
+            try {
+                lock.lock();
+                System.out.println("开始执行 thread wait");
+                condition.await();
+                System.out.println("执行结束 thread wait");
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            } finally {
+                lock.unlock();
+            }
+
+
+    }
+}
+
+
+public class ThreadNotify extends Thread {
+    private Lock lock;
+    private Condition condition;
+
+    public ThreadNotify(Lock lock,Condition condition) {
+        this.lock = lock;
+        this.condition = condition;
+    }
+
+    @Override
+    public void run() {
+       try{
+           lock.lock();
+           System.out.println("开始执行 thread notify");
+           condition.signal();
+           System.out.println("执行结束 thread notify");
+       }finally {
+           lock.unlock();
+       }
+
+
+    }
+}
+
+
+
+public class Demo {
+
+    public static void main(String[] args) {
+        Lock lock = new ReentrantLock();
+        Condition condition = lock.newCondition();
+
+        ThreadWait threadWait = new ThreadWait(lock,condition);
+
+        threadWait.start();
+        ThreadNotify threadNotify = new ThreadNotify(lock,condition);
+        threadNotify.start();
+    }
+}
+
+```
+
